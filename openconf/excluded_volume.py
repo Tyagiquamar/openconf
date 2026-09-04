@@ -44,15 +44,15 @@ class ExcludedVolumeSpec:
 
     Attributes:
         positions: environment coordinates with shape (N, 3) in Å
-        atomic_numbers: atomic numbers used to derive vdW radii
+        atomic_numbers: atomic numbers used to derive covalent radii
         radii: explicit environment radii in Å
-        radius_scale: scale applied to summed ligand and environment vdW radii
+        radius_scale: scale applied to summed ligand and environment radii
     """
 
     positions: Sequence[Sequence[float]] | NDArray[np.float64]
     atomic_numbers: Sequence[int] | NDArray[np.int_] | None = None
     radii: Sequence[float] | NDArray[np.float64] | None = None
-    radius_scale: float = 0.7
+    radius_scale: float = 1.0
 
     def __post_init__(self) -> None:
         """Validate and normalize excluded-volume inputs."""
@@ -100,7 +100,7 @@ class ExcludedVolumeSpec:
         if self.atomic_numbers is None:
             return np.zeros(len(self.positions), dtype=float)
         periodic_table = Chem.GetPeriodicTable()
-        return np.asarray([periodic_table.GetRvdw(int(number)) for number in self.atomic_numbers], dtype=float)
+        return np.asarray([periodic_table.GetRcovalent(int(number)) for number in self.atomic_numbers], dtype=float)
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +117,7 @@ class ExcludedVolumeChecker:
         object.__setattr__(self, "_environment_positions", np.asarray(self.spec.positions, dtype=float))
         periodic_table = Chem.GetPeriodicTable()
         ligand_radii = np.asarray(
-            [periodic_table.GetRvdw(atom.GetAtomicNum()) for atom in self.mol.GetAtoms()],
+            [periodic_table.GetRcovalent(atom.GetAtomicNum()) for atom in self.mol.GetAtoms()],
             dtype=float,
         )
         environment_radii = self.spec.resolved_radii()

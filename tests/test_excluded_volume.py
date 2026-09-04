@@ -45,7 +45,7 @@ def test_external_score_matches_internal_overlap_equation(
     expected_score: float,
 ) -> None:
     """External score uses internal normalized squared-overlap equation."""
-    carbon_radius = Chem.GetPeriodicTable().GetRvdw(6)
+    carbon_radius = Chem.GetPeriodicTable().GetRcovalent(6)
     mol = _single_carbon((distance_fraction * carbon_radius, 0.0, 0.0))
     checker = ExcludedVolumeChecker(
         mol,
@@ -57,7 +57,10 @@ def test_external_score_matches_internal_overlap_equation(
 
 def test_excluded_volume_spec_validation() -> None:
     """External coordinates, atom types, and radius settings validate eagerly."""
-    assert ExcludedVolumeSpec(positions=((0.0, 0.0, 0.0),)).radius_scale == 0.7
+    default_spec = ExcludedVolumeSpec(positions=((0.0, 0.0, 0.0),))
+    assert default_spec.radius_scale == 1.0
+    carbon_spec = ExcludedVolumeSpec(positions=((0.0, 0.0, 0.0),), atomic_numbers=(6,))
+    assert carbon_spec.resolved_radii() == pytest.approx((Chem.GetPeriodicTable().GetRcovalent(6),))
     with pytest.raises(OpenConfValueError, match="shape"):
         ExcludedVolumeSpec(positions=np.asarray(((0.0, 0.0),)))
     with pytest.raises(OpenConfValueError, match="either"):
@@ -125,7 +128,7 @@ def test_candidate_is_rechecked_after_minimization(monkeypatch: pytest.MonkeyPat
 
 def test_final_filter_keeps_only_clear_conformers() -> None:
     """Final filtering removes every externally clashing conformer."""
-    carbon_radius = Chem.GetPeriodicTable().GetRvdw(6)
+    carbon_radius = Chem.GetPeriodicTable().GetRcovalent(6)
     mol = _single_carbon(
         (0.5 * carbon_radius, 0.0, 0.0),
         (carbon_radius, 0.0, 0.0),
