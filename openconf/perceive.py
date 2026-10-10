@@ -287,7 +287,8 @@ def prepare_molecule(mol: Chem.Mol, add_hs: bool = True) -> Chem.Mol:
         add_hs: add hydrogens before returning
 
     Returns:
-        Prepared molecule with hydrogens and sanitization
+        Sanitized molecule with hydrogens and missing stereochemistry inferred
+        from first 3D conformer; explicit graph labels take precedence
 
     Raises:
         OpenConfRuntimeError: molecule cannot be sanitized
@@ -299,14 +300,39 @@ def prepare_molecule(mol: Chem.Mol, add_hs: bool = True) -> Chem.Mol:
     except (RuntimeError, ValueError) as e:
         raise OpenConfRuntimeError(f"Could not sanitize molecule: {e}") from e
 
-    # Assign stereochemistry
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
+    if mol.GetNumConformers() and mol.GetConformer().Is3D():
+        _assign_missing_stereochemistry_from_3d(mol)
 
     # Add hydrogens if requested
     if add_hs:
         mol = Chem.AddHs(mol)
 
     return mol
+
+
+def _assign_missing_stereochemistry_from_3d(mol: Chem.Mol) -> None:
+    """Fill missing ligand stereo labels from first 3D conformer.
+
+    Explicit graph labels take precedence. Metal coordination contacts do not
+    define inferred tetrahedral centers, including haptic bonds read from XYZ.
+    """
+    observed = Chem.Mol(mol)
+    Chem.AssignStereochemistryFrom3D(observed, confId=mol.GetConformer().GetId(), replaceExistingTags=True)
+
+    for atom, observed_atom in zip(mol.GetAtoms(), observed.GetAtoms(), strict=True):
+        if atom.GetChiralTag() == Chem.ChiralType.CHI_UNSPECIFIED:
+            if _is_metal(atom) or any(_is_metal(neighbor) for neighbor in atom.GetNeighbors()):
+                continue
+            atom.SetChiralTag(observed_atom.GetChiralTag())
+
+    for bond, observed_bond in zip(mol.GetBonds(), observed.GetBonds(), strict=True):
+        if bond.GetStereo() == Chem.BondStereo.STEREONONE and observed_bond.GetStereo() in _SPECIFIED_BOND_STEREO:
+            bond.SetStereoAtoms(*observed_bond.GetStereoAtoms())
+            bond.SetStereo(observed_bond.GetStereo())
+
+    Chem.SetDoubleBondNeighborDirections(mol)
+    Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
 
 
 def _find_ring_flips(mol: Chem.Mol, atom_rings: list[tuple[int, ...]]) -> list[RingFlip]:
